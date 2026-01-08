@@ -1,0 +1,249 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_la_posts_name": {
+            "defaultValue": "la-posts",
+            "type": "String"
+        },
+        "connections_documentdb_externalid": {
+            "defaultValue": "/subscriptions/5d6e79af-311c-4369-97f4-bea0371f58aa/resourceGroups/rg-ootd-cw2/providers/Microsoft.Web/connections/documentdb",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_la_posts_name')]",
+            "location": "uksouth",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "When_an_HTTP_request_is_received": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {
+                                "method": "POST"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Switch": {
+                            "runAfter": {},
+                            "cases": {
+                                "POST": {
+                                    "case": "POST",
+                                    "actions": {
+                                        "Create_or_update_document_(V3)": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "id": "@{guid()}",
+                                                    "postId": "@{guid()}",
+                                                    "title": "@{triggerBody()?['title']}",
+                                                    "description": "@{triggerBody()?['description']}",
+                                                    "imageUrl": "@{triggerBody()?['imageUrl']}",
+                                                    "videoUrl": "@{triggerBody()?['videoUrl']}",
+                                                    "previewUrl": "@{triggerBody()?['previewUrl']}",
+                                                    "userId": "@{triggerBody()?['userId']}",
+                                                    "createdAt": "@{utcNow()}"
+                                                },
+                                                "path": "/v2/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Posts')}/docs"
+                                            }
+                                        },
+                                        "Response_201": {
+                                            "runAfter": {
+                                                "Create_or_update_document_(V3)": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 201,
+                                                "body": {
+                                                    "success": true,
+                                                    "message": "Post created successfully",
+                                                    "data": {
+                                                        "postId": "@{body('Create_or_update_document_(V3)')?['postId']}",
+                                                        "title": "@{body('Create_or_update_document_(V3)')?['title']}",
+                                                        "imageUrl": "@{body('Create_or_update_document_(V3)')?['imageUrl']}",
+                                                        "description": "@{body('Create_or_update_document_(V3)')?['description']}",
+                                                        "createdAt": "@{body('Create_or_update_document_(V3)')?['createdAt']}"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "GET": {
+                                    "case": "GET\n",
+                                    "actions": {
+                                        "Query_documents_V5": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "/v5/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Posts')}/query",
+                                                "queries": {
+                                                    "queryText": "SELECT * FROM c ORDER BY c.createdAt DESC\n",
+                                                    "partitionKey": "@{triggerBody()?['postId']}\n"
+                                                }
+                                            }
+                                        },
+                                        "Response1": {
+                                            "runAfter": {
+                                                "Query_documents_V5": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 200,
+                                                "body": "@{body('Query_documents_V5')}\n"
+                                            }
+                                        }
+                                    }
+                                },
+                                "PUT": {
+                                    "case": "PUT",
+                                    "actions": {
+                                        "Create_or_update_document_(V3)_1": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "id": "@{triggerBody()?['postId']}",
+                                                    "postId": "@{triggerBody()?['postId']}",
+                                                    "title": "@{triggerBody()?['title']}",
+                                                    "description": "@{triggerBody()?['description']}",
+                                                    "imageUrl": "@{triggerBody()?['imageUrl']}",
+                                                    "videoUrl": "@{triggerBody()?['videoUrl']}",
+                                                    "previewUrl": "@{triggerBody()?['previewUrl']}",
+                                                    "userId": "@{triggerBody()?['userId']}",
+                                                    "updatedAt": "@{utcNow()}"
+                                                },
+                                                "path": "/v2/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Posts')}/docs"
+                                            }
+                                        },
+                                        "Response": {
+                                            "runAfter": {
+                                                "Create_or_update_document_(V3)_1": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 200,
+                                                "body": {
+                                                    "success": true,
+                                                    "message": "Post updated successfully",
+                                                    "postId": "@{triggerBody()?['postId']}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "DELETE": {
+                                    "case": "DELETE\n",
+                                    "actions": {
+                                        "Delete_a_document_(V2)": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "delete",
+                                                "headers": {
+                                                    "x-ms-documentdb-raw-partitionkey": "@{triggerBody()?['postId']}\n"
+                                                },
+                                                "path": "/v2/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Posts')}/docs/@{encodeURIComponent(triggerBody()?['postId'],'')}"
+                                            }
+                                        },
+                                        "Response_3": {
+                                            "runAfter": {
+                                                "Delete_a_document_(V2)": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 200,
+                                                "body": {
+                                                    "success": true,
+                                                    "message": "Post deleted successfully",
+                                                    "postId": "@{triggerBody()?['postId']}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "default": {
+                                "actions": {
+                                    "Response_4": {
+                                        "type": "Response",
+                                        "kind": "Http",
+                                        "inputs": {
+                                            "statusCode": 405,
+                                            "body": {
+                                                "error": "Method not allowed",
+                                                "message": "Only GET, POST, PUT and DELETE are supported"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": "@{triggerOutputs()?['method']}\n",
+                            "type": "Switch"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "documentdb": {
+                                "id": "/subscriptions/5d6e79af-311c-4369-97f4-bea0371f58aa/providers/Microsoft.Web/locations/uksouth/managedApis/documentdb",
+                                "connectionId": "[parameters('connections_documentdb_externalid')]",
+                                "connectionName": "documentdb",
+                                "connectionProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
