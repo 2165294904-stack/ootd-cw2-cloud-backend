@@ -1,0 +1,45 @@
+name: Deploy Logic Apps (ARM)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - infra/**
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy la-posts
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: rg-ootd-cw2
+          template: infra/la-posts/template.json
+          parameters: infra/la-posts/parameters.json
+
+      - name: Deploy la-users
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: rg-ootd-cw2
+          template: infra/la-users/template.json
+          parameters: infra/la-users/parameters.json
+
+      - name: Deploy la-likes
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: rg-ootd-cw2
+          template: infra/la-likes/template.json
+          parameters: infra/la-likes/parameters.json
