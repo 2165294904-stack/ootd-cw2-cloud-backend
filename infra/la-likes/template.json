@@ -1,0 +1,297 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_la_likes_name": {
+            "defaultValue": "la-likes",
+            "type": "String"
+        },
+        "connections_documentdb_externalid": {
+            "defaultValue": "/subscriptions/5d6e79af-311c-4369-97f4-bea0371f58aa/resourceGroups/rg-ootd-cw2/providers/Microsoft.Web/connections/documentdb",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_la_likes_name')]",
+            "location": "uksouth",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "When_an_HTTP_request_is_received": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "postId",
+                                        "userId"
+                                    ],
+                                    "properties": {
+                                        "postId": {
+                                            "type": "string",
+                                            "description": "The ID of the post"
+                                        },
+                                        "userId": {
+                                            "type": "string",
+                                            "description": "The ID of the user"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Switch": {
+                            "runAfter": {},
+                            "cases": {
+                                "POST": {
+                                    "case": "POST",
+                                    "actions": {
+                                        "Create_or_update_document_(V3)": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "id": "@{concat(triggerBody()?['userId'], '_', triggerBody()?['postId'])}",
+                                                    "postId": "@{triggerBody()?['postId']}",
+                                                    "userId": "@{triggerBody()?['userId']}",
+                                                    "createdAt": "@{utcNow()}"
+                                                },
+                                                "path": "/v2/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Likes')}/docs"
+                                            }
+                                        },
+                                        "Response": {
+                                            "runAfter": {
+                                                "Create_or_update_document_(V3)": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 201,
+                                                "body": {
+                                                    "message": "Liked successfully"
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "GET": {
+                                    "case": "GET",
+                                    "actions": {
+                                        "Switch_1": {
+                                            "cases": {
+                                                "check": {
+                                                    "case": "check",
+                                                    "actions": {
+                                                        "Query_documents_V5_1": {
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "get",
+                                                                "path": "/v5/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Likes')}/query",
+                                                                "queries": {
+                                                                    "queryText": "SELECT * FROM c\nWHERE c.postId = @postId AND c.userId = @userId\n",
+                                                                    "partitionKey": "@{triggerQueries()?['postId']}@{triggerQueries()?['userId']}"
+                                                                }
+                                                            }
+                                                        },
+                                                        "Condition": {
+                                                            "actions": {
+                                                                "Response_4": {
+                                                                    "type": "Response",
+                                                                    "kind": "Http",
+                                                                    "inputs": {
+                                                                        "statusCode": 200,
+                                                                        "body": {
+                                                                            "liked": true
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "runAfter": {
+                                                                "Query_documents_V5_1": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "else": {
+                                                                "actions": {
+                                                                    "Response_5": {
+                                                                        "type": "Response",
+                                                                        "kind": "Http",
+                                                                        "inputs": {
+                                                                            "statusCode": 200,
+                                                                            "body": {
+                                                                                "liked": false
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "expression": {
+                                                                "and": [
+                                                                    {
+                                                                        "equals": [
+                                                                            "@greater(length(body('Query_documents_V5_1')?['Documents']), 0)\r\n",
+                                                                            ""
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "type": "If"
+                                                        }
+                                                    }
+                                                },
+                                                "count": {
+                                                    "case": "count\n",
+                                                    "actions": {
+                                                        "Query_documents_V5": {
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "get",
+                                                                "path": "/v5/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Likes')}/query",
+                                                                "queries": {
+                                                                    "queryText": "SELECT VALUE COUNT(1)\nFROM c\nWHERE c.postId = @postId\n",
+                                                                    "partitionKey": "{\n  \"@postId\": \"@{triggerQueries()?['postId']}\"\n}\n"
+                                                                }
+                                                            }
+                                                        },
+                                                        "Response_1": {
+                                                            "runAfter": {
+                                                                "Query_documents_V5": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "Response",
+                                                            "kind": "Http",
+                                                            "inputs": {
+                                                                "statusCode": 200,
+                                                                "body": {
+                                                                    "postId": "@{triggerQueries()?['postId']}",
+                                                                    "likeCount": "@{body('Query_documents_V5')}"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "default": {
+                                                "actions": {
+                                                    "Response_6": {
+                                                        "type": "Response",
+                                                        "kind": "Http",
+                                                        "inputs": {
+                                                            "statusCode": 200,
+                                                            "body": {
+                                                                "error": "Invalid type parameter. Use type=check or type=count"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": "@{triggerQueries()?['type']}\n",
+                                            "type": "Switch"
+                                        }
+                                    }
+                                },
+                                "DELETE": {
+                                    "case": "DELETE",
+                                    "actions": {
+                                        "Delete_a_document_(V2)": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "delete",
+                                                "headers": {
+                                                    "x-ms-documentdb-raw-partitionkey": "@triggerBody()?['postId']"
+                                                },
+                                                "path": "/v2/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Likes')}/docs/@{encodeURIComponent(concat(triggerBody()?['userId'], '_', triggerBody()?['postId']))}"
+                                            }
+                                        },
+                                        "Response_2": {
+                                            "runAfter": {
+                                                "Delete_a_document_(V2)": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 200,
+                                                "body": {
+                                                    "message": "Unliked successfully"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "default": {
+                                "actions": {
+                                    "Response_3": {
+                                        "type": "Response",
+                                        "kind": "Http",
+                                        "inputs": {
+                                            "statusCode": 405,
+                                            "body": {
+                                                "error": "Method not allowed"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": "@{triggerOutputs()?['headers']?['x-ms-method']}\n",
+                            "type": "Switch"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "documentdb": {
+                                "id": "/subscriptions/5d6e79af-311c-4369-97f4-bea0371f58aa/providers/Microsoft.Web/locations/uksouth/managedApis/documentdb",
+                                "connectionId": "[parameters('connections_documentdb_externalid')]",
+                                "connectionName": "documentdb",
+                                "connectionProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
