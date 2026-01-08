@@ -1,0 +1,244 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_la_users_name": {
+            "defaultValue": "la-users",
+            "type": "String"
+        },
+        "connections_documentdb_externalid": {
+            "defaultValue": "/subscriptions/5d6e79af-311c-4369-97f4-bea0371f58aa/resourceGroups/rg-ootd-cw2/providers/Microsoft.Web/connections/documentdb",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_la_users_name')]",
+            "location": "uksouth",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "When_an_HTTP_request_is_received": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "username": {
+                                            "type": "string"
+                                        },
+                                        "email": {
+                                            "type": "string"
+                                        },
+                                        "avatarUrl": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "username",
+                                        "email"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Switch": {
+                            "runAfter": {},
+                            "cases": {
+                                "POST": {
+                                    "case": "POST",
+                                    "actions": {
+                                        "Create_or_update_document_(V3)": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "id": "@{guid()}",
+                                                    "username": "@{triggerBody()?['username']}",
+                                                    "email": "@{triggerBody()?['email']}",
+                                                    "avatarUrl": "@{triggerBody()?['avatarUrl']}",
+                                                    "createdAt": "@{utcNow()}"
+                                                },
+                                                "path": "/v2/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Users')}/docs"
+                                            }
+                                        },
+                                        "Response": {
+                                            "runAfter": {
+                                                "Create_or_update_document_(V3)": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 201,
+                                                "body": "Body:\n{\n  \"message\": \"User created\"\n}"
+                                            }
+                                        }
+                                    }
+                                },
+                                "GET": {
+                                    "case": "GET",
+                                    "actions": {
+                                        "Query_documents_V5": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "/v5/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Users')}/query",
+                                                "queries": {
+                                                    "queryText": "SELECT * FROM c WHERE c.id = @id",
+                                                    "partitionKey": "[\n  {\n    \"name\": \"@id\",\n    \"value\": \"@{triggerQueries()?['id']}\"\n  }\n]\n"
+                                                }
+                                            }
+                                        },
+                                        "Condition": {
+                                            "actions": {
+                                                "Response_1": {
+                                                    "type": "Response",
+                                                    "kind": "Http",
+                                                    "inputs": {
+                                                        "statusCode": 200,
+                                                        "body": "@first(body('Query_documents_V5')?['Documents'])"
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Query_documents_V5": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Response_2": {
+                                                        "type": "Response",
+                                                        "kind": "Http",
+                                                        "inputs": {
+                                                            "statusCode": 200,
+                                                            "body": {
+                                                                "message": "User not found"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": {
+                                                "and": [
+                                                    {
+                                                        "equals": [
+                                                            "@greater(length(body('Query_documents_V5')?['Documents']), 0)\r\n",
+                                                            ""
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "type": "If"
+                                        }
+                                    }
+                                },
+                                "PUT": {
+                                    "case": "PUT",
+                                    "actions": {
+                                        "Create_or_update_document_(V3)_1": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['documentdb']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "body": {
+                                                    "id": "@{triggerBody()?['id']}",
+                                                    "username": "@{triggerBody()?['username']}",
+                                                    "avatarUrl": "@{triggerBody()?['avatarUrl']}",
+                                                    "updatedAt": "@{utcNow()}"
+                                                },
+                                                "path": "/v2/cosmosdb/@{encodeURIComponent('AccountNameFromSettings')}/dbs/@{encodeURIComponent('otd-db')}/colls/@{encodeURIComponent('Users')}/docs"
+                                            }
+                                        },
+                                        "Response_3": {
+                                            "runAfter": {
+                                                "Create_or_update_document_(V3)_1": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Response",
+                                            "kind": "Http",
+                                            "inputs": {
+                                                "statusCode": 200,
+                                                "body": {
+                                                    "success": true,
+                                                    "message": "User updated successfully",
+                                                    "user": {
+                                                        "id": "@{triggerBody()?['id']}",
+                                                        "username": "@{triggerBody()?['username']}",
+                                                        "avatarUrl": "@{triggerBody()?['avatarUrl']}",
+                                                        "updatedAt": "@{utcNow()}"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "default": {
+                                "actions": {
+                                    "Response_4": {
+                                        "type": "Response",
+                                        "kind": "Http",
+                                        "inputs": {
+                                            "statusCode": 405,
+                                            "body": {
+                                                "success": false,
+                                                "message": "Method not allowed. Supported methods: GET, POST, PUT"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": "@{trigger().method}\n",
+                            "type": "Switch"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "documentdb": {
+                                "id": "/subscriptions/5d6e79af-311c-4369-97f4-bea0371f58aa/providers/Microsoft.Web/locations/uksouth/managedApis/documentdb",
+                                "connectionId": "[parameters('connections_documentdb_externalid')]",
+                                "connectionName": "documentdb",
+                                "connectionProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
